@@ -16,10 +16,23 @@ class Path(object):
             output_dir = '/path/to/VAR/hmdb51'
 
             return root_dir, output_dir
+        elif database == 'YouTube_Highlights':
+            # the direction to the raw data
+            # root_dir = './datasets/YouTube_Highlights'
+            # root_dir = '/Users/admin/Desktop/datasets/YouTube_Highlights'
+            root_dir = 'hdfs://haruna/home/byte_arnold_hl_vc/xuminghao.118/data/video_highlights/YouTube_Highlights'
+
+            # the direction to the preprocessed data
+            # output_dir = './datasets/YouTube_Highlights_processed'
+            # output_dir = '/Users/admin/Desktop/datasets/YouTube_Highlights_processed'
+            output_dir = 'hdfs://haruna/home/byte_arnold_hl_vc/xuminghao.118/data/video_highlights/YouTube_Highlights_processed'
+
+            return root_dir, output_dir
         else:
             print('Database {} not available.'.format(database))
             raise NotImplementedError
 
     @staticmethod
     def model_dir():
-        return '/path/to/Models/c3d-pretrained.pth'
+        # return './pretrained_model/c3d-pretrained.pth'
+        return 'hdfs://haruna/home/byte_arnold_hl_vc/xuminghao.118/pretrained_models/c3d-pretrained.pth'

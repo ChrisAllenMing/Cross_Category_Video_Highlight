@@ -7,7 +7,7 @@ class C3D(nn.Module):
     The C3D network.
     """
 
-    def __init__(self, num_classes, pretrained=False):
+    def __init__(self, num_classes=10, pretrained=False, feature_extraction=False):
         super(C3D, self).__init__()
 
         self.conv1 = nn.Conv3d(3, 64, kernel_size=(3, 3, 3), padding=(1, 1, 1))
@@ -41,6 +41,8 @@ class C3D(nn.Module):
         if pretrained:
             self.__load_pretrained_weights()
 
+        self.feature_extraction = feature_extraction
+
     def forward(self, x):
 
         x = self.relu(self.conv1(x))
@@ -64,12 +66,15 @@ class C3D(nn.Module):
         x = x.view(-1, 8192)
         x = self.relu(self.fc6(x))
         x = self.dropout(x)
-        x = self.relu(self.fc7(x))
-        x = self.dropout(x)
 
-        logits = self.fc8(x)
-
-        return logits
+        if self.feature_extraction:
+            x = self.fc7(x)
+            return x
+        else:
+            x = self.relu(self.fc7(x))
+            x = self.dropout(x)
+            logits = self.fc8(x)
+            return logits
 
     def __load_pretrained_weights(self):
         """Initialiaze network."""
