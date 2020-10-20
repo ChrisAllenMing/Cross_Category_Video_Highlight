@@ -20,11 +20,13 @@ class Path(object):
             # the direction to the raw data
             # root_dir = './datasets/YouTube_Highlights'
             # root_dir = '/Users/admin/Desktop/datasets/YouTube_Highlights'
+            # root_dir = '/home/xuminghao.118/data/video_highlights/YouTube_Highlights'
             root_dir = 'hdfs://haruna/home/byte_arnold_hl_vc/xuminghao.118/data/video_highlights/YouTube_Highlights'
 
             # the direction to the preprocessed data
             # output_dir = './datasets/YouTube_Highlights_processed'
             # output_dir = '/Users/admin/Desktop/datasets/YouTube_Highlights_processed'
+            # output_dir = '/home/xuminghao.118/data/video_highlights/YouTube_Highlights_processed'
             output_dir = 'hdfs://haruna/home/byte_arnold_hl_vc/xuminghao.118/data/video_highlights/YouTube_Highlights_processed'
 
             return root_dir, output_dir
