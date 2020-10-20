@@ -173,7 +173,6 @@ class YouTube_Highlights(Dataset):
                 for tmp_file in video_files:
                     if tmp_file[-4:] == '.mp4':
                         video_label[1] = tmp_file
-                        print ('Add video: ', tmp_file)
                     elif tmp_file == 'match_label.json':
                         video_label[2] = tmp_file
 
@@ -242,6 +241,7 @@ class YouTube_Highlights(Dataset):
                     segment_len = len(os.listdir(segment_path))
                     frame_name = os.path.join(segment_path, str(segment_len).zfill(5) + '.jpg')
                     cv2.imwrite(filename=frame_name, img=frame)
+                    print("Process frame: ", frame_name)
                 else:
                     segment_id += 1
                     if segment_id <= (len(label[1]) - 1):
@@ -250,6 +250,7 @@ class YouTube_Highlights(Dataset):
                             segment_len = len(os.listdir(segment_path))
                             frame_name = os.path.join(segment_path, str(segment_len).zfill(5) + '.jpg')
                             cv2.imwrite(filename=frame_name, img=frame)
+                            print("Process frame: ", frame_name)
 
             if segment_id < (len(label[1]) - 1):
                 if cnt >= segment_interval[segment_id+1][0] and cnt <= (segment_interval[segment_id+1][1] - 1):
@@ -258,6 +259,7 @@ class YouTube_Highlights(Dataset):
                     segment_len = len(os.listdir(segment_path))
                     frame_name = os.path.join(segment_path, str(segment_len).zfill(5) + '.jpg')
                     cv2.imwrite(filename=frame_name, img=frame)
+                    print("Process frame: ", frame_name)
 
             cnt += 1
 
