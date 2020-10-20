@@ -173,6 +173,7 @@ class YouTube_Highlights(Dataset):
                 for tmp_file in video_files:
                     if tmp_file[-4:] == '.mp4':
                         video_label[1] = tmp_file
+                        print ('Add video: ', tmp_file)
                     elif tmp_file == 'match_label.json':
                         video_label[2] = tmp_file
 
