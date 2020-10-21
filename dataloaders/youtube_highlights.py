@@ -5,6 +5,7 @@ from mypath import Path
 import torch
 import cv2
 import pdb
+import math
 import json
 import shutil
 import random
@@ -302,19 +303,29 @@ class YouTube_Highlights(Dataset):
 
             pos_frames = sorted([os.path.join(fname, img) for img in os.listdir(fname)])
             pos_buffer = np.empty((self.clip_len, self.resize_height, self.resize_width, 3), np.dtype('float32'))
+            frame_interval = int(math.floor(100. / float(self.clip_len)))
+            frame_idx = 0
             for i, frame_name in enumerate(pos_frames):
-                if i >= self.clip_len:
+                if not i % frame_interval == 0:
+                    continue
+                if i == (frame_interval * self.clip_len):
                     break
                 frame = np.array(cv2.imread(frame_name)).astype(np.float64)
-                pos_buffer[i] = frame
+                pos_buffer[frame_idx] = frame
+                frame_idx += 1
 
             neg_frames = sorted([os.path.join(fname_, img) for img in os.listdir(fname_)])
             neg_buffer = np.empty((self.clip_len, self.resize_height, self.resize_width, 3), np.dtype('float32'))
+            frame_interval = int(math.floor(100. / float(self.clip_len)))
+            frame_idx = 0
             for i, frame_name in enumerate(neg_frames):
-                if i >= self.clip_len:
+                if not i % frame_interval == 0:
+                    continue
+                if i == (frame_interval * self.clip_len):
                     break
                 frame = np.array(cv2.imread(frame_name)).astype(np.float64)
-                neg_buffer[i] = frame
+                neg_buffer[frame_idx] = frame
+                frame_idx += 1
         else:
             valid_indices = np.where(np.logical_and(np.array(self.video_names) == video_name, self.labels == 1))[0]
             index_ = random.sample(valid_indices.tolist(), 1)[0]
@@ -325,30 +336,45 @@ class YouTube_Highlights(Dataset):
 
             pos_frames = sorted([os.path.join(fname_, img) for img in os.listdir(fname_)])
             pos_buffer = np.empty((self.clip_len, self.resize_height, self.resize_width, 3), np.dtype('float32'))
+            frame_interval = int(math.floor(100. / float(self.clip_len)))
+            frame_idx = 0
             for i, frame_name in enumerate(pos_frames):
-                if i >= self.clip_len:
+                if not i % frame_interval == 0:
+                    continue
+                if i == (frame_interval * self.clip_len):
                     break
                 frame = np.array(cv2.imread(frame_name)).astype(np.float64)
-                pos_buffer[i] = frame
+                pos_buffer[frame_idx] = frame
+                frame_idx += 1
 
             neg_frames = sorted([os.path.join(fname, img) for img in os.listdir(fname)])
             neg_buffer = np.empty((self.clip_len, self.resize_height, self.resize_width, 3), np.dtype('float32'))
+            frame_interval = int(math.floor(100. / float(self.clip_len)))
+            frame_idx = 0
             for i, frame_name in enumerate(neg_frames):
-                if i >= self.clip_len:
+                if not i % frame_interval == 0:
+                    continue
+                if i == (frame_interval * self.clip_len):
                     break
                 frame = np.array(cv2.imread(frame_name)).astype(np.float64)
-                neg_buffer[i] = frame
+                neg_buffer[frame_idx] = frame
+                frame_idx += 1
 
         return pos_buffer, neg_buffer, pos_label, neg_label
 
     def load_frames(self, file_dir):
         frames = sorted([os.path.join(file_dir, img) for img in os.listdir(file_dir)])
         buffer = np.empty((self.clip_len, self.resize_height, self.resize_width, 3), np.dtype('float32'))
+        frame_interval = int(math.floor(100. / float(self.clip_len)))
+        frame_idx = 0
         for i, frame_name in enumerate(frames):
-            if i >= self.clip_len:
+            if not i % frame_interval == 0:
+                continue
+            if i == (frame_interval * self.clip_len):
                 break
             frame = np.array(cv2.imread(frame_name)).astype(np.float64)
-            buffer[i] = frame
+            buffer[frame_idx] = frame
+            frame_idx += 1
 
         return buffer
 

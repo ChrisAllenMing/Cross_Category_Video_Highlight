@@ -34,7 +34,7 @@ parser.add_argument('--resume_epoch', type = int, default = 0, help = 'the epoch
 parser.add_argument('--lr', type = float, default = 0.001, help = 'the learning rate')
 parser.add_argument('--dropout_ratio', type = float, default = 0.5, help = 'the dropout ratio')
 parser.add_argument('--batch_size', type = int, default = 10, help = 'the batch size')
-parser.add_argument('--clip_len', type = int, default = 100, help = 'the length of each video clip')
+parser.add_argument('--clip_len', type = int, default = 16, help = 'the length of each video clip')
 parser.add_argument('--use_test', action = 'store_true', default = False,
                     help = 'whether to evaluate the model every epoch')
 parser.add_argument('--test_interval', type = int, default = 20, help = 'the interval between tests')
@@ -166,7 +166,7 @@ def test_model(epoch, test_loader, encoder, score_model, writer):
     writer.add_scalar('data/test_map_epoch', map, epoch)
     print("[Test] Epoch: {}/{} mAP: {}".format(epoch + 1, opt.epochs, map))
 
-    return
+    return map
 
 ###################################
 
