@@ -21,13 +21,15 @@ class Path(object):
             # root_dir = './datasets/YouTube_Highlights'
             # root_dir = '/Users/admin/Desktop/datasets/YouTube_Highlights'
             # root_dir = '/home/xuminghao.118/data/video_highlights/YouTube_Highlights'
-            root_dir = 'hdfs://haruna/home/byte_arnold_hl_vc/xuminghao.118/data/video_highlights/YouTube_Highlights'
+            # root_dir = 'hdfs://haruna/home/byte_arnold_hl_vc/xuminghao.118/data/video_highlights/YouTube_Highlights'
+            root_dir = '/opt/tiger/data/video_highlights/YouTube_Highlights'
 
             # the direction to the preprocessed data
             # output_dir = './datasets/YouTube_Highlights_processed'
             # output_dir = '/Users/admin/Desktop/datasets/YouTube_Highlights_processed'
             # output_dir = '/home/xuminghao.118/data/video_highlights/YouTube_Highlights_processed'
-            output_dir = 'hdfs://haruna/home/byte_arnold_hl_vc/xuminghao.118/data/video_highlights/YouTube_Highlights_processed'
+            # output_dir = 'hdfs://haruna/home/byte_arnold_hl_vc/xuminghao.118/data/video_highlights/YouTube_Highlights_processed'
+            output_dir = '/opt/tiger/data/video_highlights/YouTube_Highlights_processed'
 
             return root_dir, output_dir
         else:
@@ -36,5 +38,7 @@ class Path(object):
 
     @staticmethod
     def model_dir():
-        # return './pretrained_model/c3d-pretrained.pth'
-        return 'hdfs://haruna/home/byte_arnold_hl_vc/xuminghao.118/pretrained_models/c3d-pretrained.pth'
+        # return '/Users/admin/Desktop/code/pretrained_models/c3d-pretrained.pth'
+        # return '/home/xuminghao.118/pretrained_models/c3d-pretrained.pth'
+        # return 'hdfs://haruna/home/byte_arnold_hl_vc/xuminghao.118/pretrained_models/c3d-pretrained.pth'
+        return '/opt/tiger/pretrained_models/c3d-pretrained.pth'

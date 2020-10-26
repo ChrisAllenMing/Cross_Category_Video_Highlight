@@ -11,6 +11,7 @@ from tqdm import tqdm
 import argparse
 
 import torch
+import torch.nn.functional as F
 from tensorboardX import SummaryWriter
 from torch import nn, optim
 from torch.utils.data import DataLoader
@@ -19,8 +20,9 @@ from sklearn.metrics import average_precision_score
 import numpy as np
 
 # from dataloaders.dataset import VideoDataset
-from dataloaders.youtube_highlights import YouTube_Highlights
+from dataloaders.youtube_highlights_set import YouTube_Highlights_Set
 from network import C3D_model, R2Plus1D_model, R3D_model
+from network import transformer
 from network import score_net
 
 ###################################
@@ -33,8 +35,13 @@ parser.add_argument('--epochs', type = int, default = 100, help = 'the number of
 parser.add_argument('--resume_epoch', type = int, default = 0, help = 'the epoch that the model store from')
 parser.add_argument('--lr', type = float, default = 0.001, help = 'the learning rate')
 parser.add_argument('--dropout_ratio', type = float, default = 0.5, help = 'the dropout ratio')
-parser.add_argument('--batch_size', type = int, default = 10, help = 'the batch size')
+parser.add_argument('--batch_size', type = int, default = 1, help = 'the batch size')
+parser.add_argument('--set_size', type = int, default = 32, help = 'the maximum size of a set')
 parser.add_argument('--clip_len', type = int, default = 16, help = 'the length of each video clip')
+parser.add_argument('--depth', type=int, default=5, help = 'the depth of transformer')
+parser.add_argument('--heads', type=int, default=8, help = 'the number of attention heads in transformer')
+parser.add_argument('--mlp_dim', type=int, default=8192, help = 'the dimension of the internal feature in MLP')
+parser.add_argument('--smooth_ratio', type=float, default=0.05, help = 'the extent of distribution smoothing')
 parser.add_argument('--use_test', action = 'store_true', default = False,
                     help = 'whether to evaluate the model every epoch')
 parser.add_argument('--test_interval', type = int, default = 20, help = 'the interval between tests')
@@ -67,37 +74,40 @@ save_name = opt.model + '_' + opt.dataset
 
 ###################################
 
-def train_model(epoch, train_loader, encoder, score_model, optimizer, scheduler, writer):
-    # Train the score model to assign higher scores to highlight segments
+def train_model(epoch, train_loader, encoder, transformer, score_model, optimizer, scheduler, writer):
+    # Train the transformer and score model to predict the score distribution of a set of video segments
     encoder.train()
+    transformer.train()
     score_model.train()
     scheduler.step()
 
     start_time = timeit.default_timer()
     running_loss = 0.0
 
-    for pos_inputs, neg_inputs, pos_labels, neg_labels in tqdm(train_loader):
-        pos_inputs = pos_inputs.to(device)
-        neg_inputs = neg_inputs.to(device)
-        pos_labels = pos_labels.to(device)
-        neg_labels = neg_labels.to(device)
+    for inputs, labels in tqdm(train_loader):
+        # The first dimension is assumed to be 1
+        inputs = inputs.squeeze(0).to(device)
+        labels = labels.squeeze(0).to(device)
 
-        pos_emb = encoder(pos_inputs)
-        pos_score = score_model(pos_emb).squeeze(-1)
-        neg_emb = encoder(neg_inputs)
-        neg_score = score_model(neg_emb).squeeze(-1)
+        emb = encoder(inputs)
+        emb_ = emb.unsqueeze(0)
+        transformed_emb_ = transformer(emb_)
+        transformed_emb = transformed_emb_.squeeze(0)
+        score = score_model(transformed_emb).squeeze(-1)
 
-        margin = (pos_labels - neg_labels) * 0.5
-        score_diff = margin - pos_score + neg_score
-        contrastive_loss = torch.mean(
-            torch.max(torch.stack([score_diff, torch.zeros_like(score_diff)], dim=0), dim=0)[0])
-        running_loss += contrastive_loss.item() * pos_inputs.shape[0]
+        score_distribution = score / score.sum()
+        label_distribution = labels / labels.sum()
+        label_distribution = (1 - opt.smooth_ratio) * label_distribution + \
+                             opt.smooth_ratio * torch.ones_like(label_distribution) / label_distribution.shape[0]
+
+        kl_loss = F.kl_div(torch.log(score_distribution), label_distribution)
+        running_loss += kl_loss.item()
 
         optimizer.zero_grad()
-        contrastive_loss.backward()
+        kl_loss.backward()
         optimizer.step()
 
-    epoch_loss = running_loss / len(train_loader.dataset)
+    epoch_loss = running_loss / len(train_loader)
     writer.add_scalar('data/train_loss_epoch', epoch_loss, epoch)
 
     print("[Train] Epoch: {}/{} Loss: {}".format(epoch + 1, opt.epochs, epoch_loss))
@@ -108,6 +118,7 @@ def train_model(epoch, train_loader, encoder, score_model, optimizer, scheduler,
         torch.save({
             'epoch': epoch + 1,
             'encoder': encoder.state_dict(),
+            'transformer': transformer.state_dict(),
             'score_model': score_model.state_dict(),
             'optimizer': optimizer.state_dict(),
         }, os.path.join(save_dir, 'models', save_name + '_epoch-' + str(epoch) + '.pth'))
@@ -118,34 +129,39 @@ def train_model(epoch, train_loader, encoder, score_model, optimizer, scheduler,
 
 ###################################
 
-def test_model(epoch, test_loader, encoder, score_model, writer):
+def test_model(epoch, test_loader, encoder, transformer, score_model, writer):
     # Evaluate the highlight score for each test segment
     encoder.eval()
+    transformer.eval()
     score_model.eval()
 
     start_time = timeit.default_timer()
     video_scores = dict()
     video_labels = dict()
 
-    for inputs, labels, video_ids in tqdm(test_loader):
-        inputs = inputs.to(device)
+    for inputs, labels, index, video_id in tqdm(test_loader):
+        inputs = inputs.squeeze(0).to(device)
+        labels = labels.squeeze(0)
+        index = index[0].item()
+        video_id = video_id[0].item()
 
         emb = encoder(inputs)
-        score = score_model(emb).squeeze(-1)
+        emb_ = emb.unsqueeze(0)
+        transformed_emb_ = transformer(emb_)
+        transformed_emb = transformed_emb_.squeeze(0)
+        score = score_model(transformed_emb).squeeze(-1)
 
-        for batch_idx in range(video_ids.shape[0]):
-            tmp_score = score[batch_idx].item()
-            tmp_label = labels[batch_idx].item()
-            tmp_video_id = video_ids[batch_idx].item()
+        tmp_score = score[index].item()
+        tmp_label = labels[index].item()
 
-            if tmp_video_id in video_scores:
-                video_scores[tmp_video_id].append(tmp_score)
-                video_labels[tmp_video_id].append(tmp_label)
-            else:
-                video_scores[tmp_video_id] = list()
-                video_scores[tmp_video_id].append(tmp_score)
-                video_labels[tmp_video_id] = list()
-                video_labels[tmp_video_id].append(tmp_label)
+        if video_id in video_scores:
+            video_scores[video_id].append(tmp_score)
+            video_labels[video_id].append(tmp_label)
+        else:
+            video_scores[video_id] = list()
+            video_scores[video_id].append(tmp_score)
+            video_labels[video_id] = list()
+            video_labels[video_id].append(tmp_label)
 
     stop_time = timeit.default_timer()
     print("Execution time: " + str(stop_time - start_time) + "\n")
@@ -173,8 +189,11 @@ def test_model(epoch, test_loader, encoder, score_model, writer):
 if __name__ == "__main__":
     if opt.model == 'C3D':
         encoder = C3D_model.C3D(pretrained=True, feature_extraction=True)
-        score_model = score_net.ScoreFCN(emb_dim = 4096)
+        transformer = transformer.Transformer(dim=4096, depth=opt.depth, heads=opt.heads, mlp_dim=opt.mlp_dim,
+                                              dropout=opt.dropout_ratio)
+        score_model = score_net.ScoreFCN(emb_dim=4096)
         train_params = [{'params':C3D_model.get_1x_lr_params(encoder), 'lr': 0},
+                        {'params':transformer.parameters(), 'lr': opt.lr},
                         {'params':score_model.parameters(), 'lr': opt.lr}]
     else:
         print('We only consider to use C3D model for feature extraction')
@@ -191,28 +210,32 @@ if __name__ == "__main__":
         print("Initializing weights from: {}...".format(
             os.path.join(save_dir, 'models', save_name + '_epoch-' + str(opt.resume_epoch - 1) + '.pth')))
         encoder.load_state_dict(checkpoint['encoder'])
+        transformer.load_state_dict(checkpoint['transformer'])
         score_model.load_state_dict(checkpoint['score_model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
 
     encoder.to(device)
+    transformer.to(device)
     score_model.to(device)
 
     log_dir = os.path.join(save_dir, 'models', datetime.now().strftime('%b%d_%H-%M-%S') + '_' + socket.gethostname())
     writer = SummaryWriter(log_dir=log_dir)
 
     print('Start training on {} dataset...'.format(opt.dataset))
-    train_dataset = YouTube_Highlights(dataset=opt.dataset, split='train', category=opt.category, clip_len=opt.clip_len)
-    test_dataset = YouTube_Highlights(dataset=opt.dataset, split='test', category = opt.category, clip_len=opt.clip_len)
+    train_dataset = YouTube_Highlights_Set(dataset=opt.dataset, split='train', category=opt.category,
+                                           clip_len=opt.clip_len, set_size=opt.set_size)
+    test_dataset = YouTube_Highlights_Set(dataset=opt.dataset, split='test', category=opt.category,
+                                          clip_len=opt.clip_len, set_size=opt.set_size)
 
     train_loader = DataLoader(train_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=1)
-    test_loader = DataLoader(test_dataset, batch_size=opt.batch_size, num_workers=1)
+    test_loader = DataLoader(test_dataset, batch_size=opt.batch_size, shuffle=False, num_workers=1)
     best_test = 0
 
     for epoch in range(opt.resume_epoch, opt.epochs):
-        train_model(epoch, train_loader, encoder, score_model, optimizer, scheduler, writer)
+        train_model(epoch, train_loader, encoder, transformer, score_model, optimizer, scheduler, writer)
 
         if opt.use_test or epoch % opt.test_interval == (opt.test_interval - 1):
-            test_result = test_model(epoch, test_loader, encoder, score_model, writer)
+            test_result = test_model(epoch, test_loader, encoder, transformer, score_model, writer)
             if test_result > best_test:
                 best_test = test_result
             print('Best test performance: ', best_test)
