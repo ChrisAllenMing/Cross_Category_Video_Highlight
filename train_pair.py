@@ -118,7 +118,7 @@ def train_model(epoch, train_loader, encoder, score_model, optimizer, scheduler,
 
 ###################################
 
-def test_model(epoch, test_loader, encoder, score_model, writer):
+def test_model(epoch, test_loader, encoder, score_model, writer, epsilon=1e-5):
     # Evaluate the highlight score for each test segment
     encoder.eval()
     score_model.eval()
@@ -154,7 +154,7 @@ def test_model(epoch, test_loader, encoder, score_model, writer):
     aps = list()
     for video_id in video_scores.keys():
         tmp_scores = np.array(video_scores[video_id], dtype=np.float32)
-        tmp_scores = tmp_scores / tmp_scores.sum()
+        tmp_scores = tmp_scores / (tmp_scores.sum() + epsilon)
 
         tmp_labels = np.array(video_labels[video_id], dtype=np.float32)
         tmp_labels = np.float32(tmp_labels > 0)

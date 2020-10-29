@@ -38,6 +38,7 @@ parser.add_argument('--dropout_ratio', type = float, default = 0.5, help = 'the 
 parser.add_argument('--batch_size', type = int, default = 1, help = 'the batch size')
 parser.add_argument('--set_size', type = int, default = 32, help = 'the maximum size of a set')
 parser.add_argument('--clip_len', type = int, default = 16, help = 'the length of each video clip')
+parser.add_argument('--use_transformer', action = 'store_true', default=False, help = 'whether to use transformer')
 parser.add_argument('--depth', type=int, default=5, help = 'the depth of transformer')
 parser.add_argument('--heads', type=int, default=8, help = 'the number of attention heads in transformer')
 parser.add_argument('--mlp_dim', type=int, default=8192, help = 'the dimension of the internal feature in MLP')
@@ -74,7 +75,7 @@ save_name = opt.model + '_' + opt.dataset
 
 ###################################
 
-def train_model(epoch, train_loader, encoder, transformer, score_model, optimizer, scheduler, writer):
+def train_model(epoch, train_loader, encoder, transformer, score_model, optimizer, scheduler, writer, epsilon=1e-5):
     # Train the transformer and score model to predict the score distribution of a set of video segments
     encoder.train()
     transformer.train()
@@ -86,21 +87,34 @@ def train_model(epoch, train_loader, encoder, transformer, score_model, optimize
 
     for inputs, labels in tqdm(train_loader):
         # The first dimension is assumed to be 1
-        inputs = inputs.squeeze(0).to(device)
-        labels = labels.squeeze(0).to(device)
+        inputs = inputs.float().squeeze(0).to(device)
+        labels = labels.float().squeeze(0).to(device)
+
+        # Skip the batch if all segments are non-highlight
+        if not torch.any(labels > 0):
+            continue
 
         emb = encoder(inputs)
-        emb_ = emb.unsqueeze(0)
-        transformed_emb_ = transformer(emb_)
-        transformed_emb = transformed_emb_.squeeze(0)
-        score = score_model(transformed_emb).squeeze(-1)
+        if opt.use_transformer:
+            emb_ = emb.unsqueeze(0)
+            transformed_emb_ = transformer(emb_)
+            transformed_emb = transformed_emb_.squeeze(0)
+            score = score_model(transformed_emb).squeeze(-1)
+        else:
+            score = score_model(emb).squeeze(-1)
+        score = torch.sigmoid(score) * 2. - 1.
 
-        score_distribution = score / score.sum()
-        label_distribution = labels / labels.sum()
-        label_distribution = (1 - opt.smooth_ratio) * label_distribution + \
-                             opt.smooth_ratio * torch.ones_like(label_distribution) / label_distribution.shape[0]
+        # score_distribution = score / (score.sum() + epsilon)
+        # label_distribution = labels / (labels.sum() + epsilon)
+        # label_distribution = (1 - opt.smooth_ratio) * label_distribution + \
+        #                      opt.smooth_ratio * torch.ones_like(label_distribution) / label_distribution.shape[0]
+        label_distribution = F.softmax(labels, dim=0)
 
-        kl_loss = F.kl_div(torch.log(score_distribution), label_distribution)
+        # kl_loss = F.kl_div(torch.log(score_distribution), label_distribution)
+        kl_loss = F.kl_div(F.log_softmax(score, dim=0), label_distribution)
+        if torch.isnan(kl_loss) or torch.isinf(kl_loss):
+            print('Skip the NaN or INF loss')
+            continue
         running_loss += kl_loss.item()
 
         optimizer.zero_grad()
@@ -129,7 +143,7 @@ def train_model(epoch, train_loader, encoder, transformer, score_model, optimize
 
 ###################################
 
-def test_model(epoch, test_loader, encoder, transformer, score_model, writer):
+def test_model(epoch, test_loader, encoder, transformer, score_model, writer, epsilon=1e-5):
     # Evaluate the highlight score for each test segment
     encoder.eval()
     transformer.eval()
@@ -140,16 +154,24 @@ def test_model(epoch, test_loader, encoder, transformer, score_model, writer):
     video_labels = dict()
 
     for inputs, labels, index, video_id in tqdm(test_loader):
-        inputs = inputs.squeeze(0).to(device)
-        labels = labels.squeeze(0)
+        inputs = inputs.float().squeeze(0).to(device)
+        labels = labels.float().squeeze(0)
         index = index[0].item()
         video_id = video_id[0].item()
 
         emb = encoder(inputs)
-        emb_ = emb.unsqueeze(0)
-        transformed_emb_ = transformer(emb_)
-        transformed_emb = transformed_emb_.squeeze(0)
-        score = score_model(transformed_emb).squeeze(-1)
+        if opt.use_transformer:
+            emb_ = emb.unsqueeze(0)
+            transformed_emb_ = transformer(emb_)
+            transformed_emb = transformed_emb_.squeeze(0)
+            score = score_model(transformed_emb).squeeze(-1)
+        else:
+            score = score_model(emb).squeeze(-1)
+        score = torch.sigmoid(score) * 2. - 1.
+
+        if torch.any(torch.isnan(score)) or torch.any(torch.isinf(score)):
+            print('Skip invalid samples')
+            continue
 
         tmp_score = score[index].item()
         tmp_label = labels[index].item()
@@ -169,11 +191,15 @@ def test_model(epoch, test_loader, encoder, transformer, score_model, writer):
     # Compute AP within each video and report their mean
     aps = list()
     for video_id in video_scores.keys():
-        tmp_scores = np.array(video_scores[video_id], dtype=np.float32)
-        tmp_scores = tmp_scores / tmp_scores.sum()
+        tmp_scores = np.array(video_scores[video_id], dtype=np.float64)
+        large_scores = np.float64(tmp_scores > 200)
+        tmp_scores = tmp_scores * (1 - large_scores) + 200. * large_scores
+        # tmp_scores = tmp_scores / (tmp_scores.sum() + epsilon)
+        tmp_scores = np.exp(tmp_scores) / (np.exp(tmp_scores).sum() + epsilon)
 
-        tmp_labels = np.array(video_labels[video_id], dtype=np.float32)
-        tmp_labels = np.float32(tmp_labels > 0)
+        tmp_labels = np.array(video_labels[video_id], dtype=np.float64)
+        tmp_labels = np.float64(tmp_labels > 0)
+        # tmp_labels = np.exp(tmp_labels) / (np.exp(tmp_labels).sum() + epsilon)
 
         ap = average_precision_score(tmp_labels, tmp_scores)
         aps.append(ap)
