@@ -29,7 +29,8 @@ from network import score_net
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type = str, default = 'YouTube_Highlights', help = 'the dataset name')
-parser.add_argument('--category', type = str, default = 'surfing', help = 'the category of videos to train on')
+parser.add_argument('--src_category', type = str, default = 'surfing', help = 'the category of videos to train on')
+parser.add_argument('--tgt_category', type = str, default = 'surfing', help = 'the category of videos to test on')
 parser.add_argument('--model', type = str, default = 'C3D', help = 'the name of the model')
 parser.add_argument('--epochs', type = int, default = 100, help = 'the number of training epochs')
 parser.add_argument('--resume_epoch', type = int, default = 0, help = 'the epoch that the model store from')
@@ -248,9 +249,9 @@ if __name__ == "__main__":
     writer = SummaryWriter(log_dir=log_dir)
 
     print('Start training on {} dataset...'.format(opt.dataset))
-    train_dataset = YouTube_Highlights_Set(dataset=opt.dataset, split='train', category=opt.category,
+    train_dataset = YouTube_Highlights_Set(dataset=opt.dataset, split='train', category=opt.src_category,
                                            clip_len=opt.clip_len, set_size=opt.set_size)
-    test_dataset = YouTube_Highlights_Set(dataset=opt.dataset, split='test', category=opt.category,
+    test_dataset = YouTube_Highlights_Set(dataset=opt.dataset, split='test', category=opt.tgt_category,
                                           clip_len=opt.clip_len, set_size=opt.set_size)
 
     train_loader = DataLoader(train_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=1)
