@@ -45,8 +45,8 @@ parser.add_argument('--depth', type=int, default=5, help = 'the depth of transfo
 parser.add_argument('--heads', type=int, default=8, help = 'the number of attention heads in transformer')
 parser.add_argument('--mlp_dim', type=int, default=8192, help = 'the dimension of the internal feature in MLP')
 parser.add_argument('--smooth_ratio', type=float, default=0.05, help = 'the extent of distribution smoothing')
-parser.add_argument('--da_weight', type=float, default=1.0, help = 'the weight of domain adaptation loss')
-parser.add_argument('--da_metric', type=str, default='mmd', help='metric for domain adaptation: mmd or coral')
+parser.add_argument('--num_opt', type=int, default=3,
+                    help='the number of optimization step for discrepancy minimization')
 parser.add_argument('--use_test', action = 'store_true', default = False,
                     help = 'whether to evaluate the model every epoch')
 parser.add_argument('--test_interval', type = int, default = 20, help = 'the interval between tests')
@@ -79,19 +79,23 @@ save_name = opt.model + '_' + opt.dataset
 
 ###################################
 
-def train_model(epoch, train_src_loader, train_tgt_loader, encoder, transformer, score_model,
-                optimizer, scheduler, writer, epsilon=1e-5):
+def train_model(epoch, train_src_loader, train_tgt_loader, encoder, transformer, score_model1, score_model2,
+                optimizer_g, optimizer_c1, optimizer_c2, scheduler_g, scheduler_c1, scheduler_c2, writer, epsilon=1e-5):
     # Train the transformer and score model to predict the score distribution of a set of video segments
     encoder.train()
     transformer.train()
-    score_model.train()
-    scheduler.step()
+    score_model1.train()
+    score_model2.train()
+    scheduler_g.step()
+    scheduler_c1.step()
+    scheduler_c2.step()
 
     tgt_data_iter = iter(train_tgt_loader)
     tgt_num_iter = len(train_tgt_loader)
     start_time = timeit.default_timer()
-    running_kl_loss = 0.0
-    running_da_loss = 0.0
+    running_kl_loss_1 = 0.0
+    running_kl_loss_2 = 0.0
+    running_dis_loss = 0.0
     iter_cnt = 0
 
     for inputs, labels in tqdm(train_src_loader):
@@ -111,61 +115,133 @@ def train_model(epoch, train_src_loader, train_tgt_loader, encoder, transformer,
         if not torch.any(labels > 0):
             continue
 
+        # Step 1: Supervised training on source domain
         emb = encoder(inputs)
-        tgt_emb = encoder(tgt_inputs)
         if opt.use_transformer:
             emb_ = emb.unsqueeze(0)
             transformed_emb_ = transformer(emb_)
             transformed_emb = transformed_emb_.squeeze(0)
-            score = score_model(transformed_emb).squeeze(-1)
+            score1 = score_model1(transformed_emb).squeeze(-1)
+            score2 = score_model2(transformed_emb).squeeze(-1)
+        else:
+            score1 = score_model1(emb).squeeze(-1)
+            score2 = score_model2(emb).squeeze(-1)
 
+        score1 = torch.sigmoid(score1) * 2. - 1.
+        score2 = torch.sigmoid(score2) * 2. - 1.
+
+        label_distribution = F.softmax(labels, dim = 0)
+        kl_loss_1 = F.kl_div(F.log_softmax(score1, dim=0), label_distribution)
+        kl_loss_2 = F.kl_div(F.log_softmax(score2, dim=0), label_distribution)
+        loss_step1 = kl_loss_1 + kl_loss_2
+
+        if torch.isnan(loss_step1) or torch.isinf(loss_step1):
+            print('Skip the NaN or INF loss in step 1')
+            continue
+        running_kl_loss_1 += kl_loss_1.item()
+        running_kl_loss_2 += kl_loss_2.item()
+
+        optimizer_g.zero_grad()
+        optimizer_c1.zero_grad()
+        optimizer_c2.zero_grad()
+        loss_step1.backward()
+        optimizer_g.step()
+        optimizer_c1.step()
+        optimizer_c2.step()
+
+        # Step 2: Maximize the discrepancy between two scorers on target domain
+        emb = encoder(inputs)
+        if opt.use_transformer:
+            emb_ = emb.unsqueeze(0)
+            transformed_emb_ = transformer(emb_)
+            transformed_emb = transformed_emb_.squeeze(0)
+            score1 = score_model1(transformed_emb).squeeze(-1)
+            score2 = score_model2(transformed_emb).squeeze(-1)
+        else:
+            score1 = score_model1(emb).squeeze(-1)
+            score2 = score_model2(emb).squeeze(-1)
+
+        score1 = torch.sigmoid(score1) * 2. - 1.
+        score2 = torch.sigmoid(score2) * 2. - 1.
+
+        tgt_emb = encoder(tgt_inputs)
+        if opt.use_transformer:
             tgt_emb_ = tgt_emb.unsqueeze(0)
             tgt_transformed_emb_ = transformer(tgt_emb_)
             tgt_transformed_emb = tgt_transformed_emb_.squeeze(0)
+            tgt_score1 = score_model1(tgt_transformed_emb).squeeze(-1)
+            tgt_score2 = score_model2(tgt_transformed_emb).squeeze(-1)
         else:
-            score = score_model(emb).squeeze(-1)
-        score = torch.sigmoid(score) * 2. - 1.
+            tgt_score1 = score_model1(tgt_emb).squeeze(-1)
+            tgt_score2 = score_model2(tgt_emb).squeeze(-1)
 
-        # score_distribution = score / (score.sum() + epsilon)
-        # label_distribution = labels / (labels.sum() + epsilon)
-        # label_distribution = (1 - opt.smooth_ratio) * label_distribution + \
-        #                      opt.smooth_ratio * torch.ones_like(label_distribution) / label_distribution.shape[0]
+        tgt_score1 = torch.sigmoid(tgt_score1) * 2. - 1.
+        tgt_score2 = torch.sigmoid(tgt_score2) * 2. - 1.
+
         label_distribution = F.softmax(labels, dim=0)
+        kl_loss_1 = F.kl_div(F.log_softmax(score1, dim=0), label_distribution)
+        kl_loss_2 = F.kl_div(F.log_softmax(score2, dim=0), label_distribution)
+        kl_loss = kl_loss_1 + kl_loss_2
 
-        # kl_loss = F.kl_div(torch.log(score_distribution), label_distribution)
-        kl_loss = F.kl_div(F.log_softmax(score, dim=0), label_distribution)
+        tgt_score_avg = (tgt_score1 + tgt_score2) / 2.
+        tgt_score_distribution = F.softmax(tgt_score_avg, dim=0)
+        dis_loss_1 = F.kl_div(F.log_softmax(tgt_score1, dim=0), tgt_score_distribution)
+        dis_loss_2 = F.kl_div(F.log_softmax(tgt_score2, dim=0), tgt_score_distribution)
+        dis_loss = (dis_loss_1 + dis_loss_2) / 2.
 
-        if opt.da_metric == 'mmd':
-            da_loss_func = mmd_rbf_noaccelerate
-        elif opt.da_metric == 'coral':
-            da_loss_func = coral_distance
-        else:
-            raise ValueError('Currently, only implement mmd and coral loss')
-
-        min_set_size = min(emb.shape[0], tgt_emb.shape[0])
-        if opt.use_transformer:
-            da_loss = da_loss_func(transformed_emb[:min_set_size, :], tgt_transformed_emb[:min_set_size, :])
-        else:
-            da_loss = da_loss_func(emb[:min_set_size, :], tgt_emb[:min_set_size, :])
-
-        loss = kl_loss + opt.da_weight * da_loss
-
-        if torch.isnan(loss) or torch.isinf(loss):
-            print('Skip the NaN or INF loss')
+        loss_step2 = kl_loss - dis_loss
+        if torch.isnan(loss_step2) or torch.isinf(loss_step2):
+            print('Skip the NaN or INF loss in step 2')
             continue
-        running_kl_loss += kl_loss.item()
-        running_da_loss += da_loss.item()
+        running_dis_loss += dis_loss.item()
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        optimizer_g.zero_grad()
+        optimizer_c1.zero_grad()
+        optimizer_c2.zero_grad()
+        loss_step2.backward()
+        optimizer_c1.step()
+        optimizer_c2.step()
 
-    epoch_kl_loss = running_kl_loss / len(train_src_loader)
-    epoch_da_loss = running_da_loss / len(train_src_loader)
-    writer.add_scalar('data/train_kl_loss_epoch', epoch_kl_loss, epoch)
-    writer.add_scalar('data/train_da_loss_epoch', epoch_da_loss, epoch)
+        # Step3: Minimize the discrepancy between two scorers on target domain
+        for opt_iter in range(opt.num_opt):
+            tgt_emb = encoder(tgt_inputs)
+            if opt.use_transformer:
+                tgt_emb_ = tgt_emb.unsqueeze(0)
+                tgt_transformed_emb_ = transformer(tgt_emb_)
+                tgt_transformed_emb = tgt_transformed_emb_.squeeze(0)
+                tgt_score1 = score_model1(tgt_transformed_emb).squeeze(-1)
+                tgt_score2 = score_model2(tgt_transformed_emb).squeeze(-1)
+            else:
+                tgt_score1 = score_model1(tgt_emb).squeeze(-1)
+                tgt_score2 = score_model2(tgt_emb).squeeze(-1)
 
-    print("[Train] Epoch: {}/{} KL Loss: {} DA Loss: {}".format(epoch + 1, opt.epochs, epoch_kl_loss, epoch_da_loss))
+            tgt_score1 = torch.sigmoid(tgt_score1) * 2. - 1.
+            tgt_score2 = torch.sigmoid(tgt_score2) * 2. - 1.
+
+            tgt_score_avg = (tgt_score1 + tgt_score2) / 2.
+            tgt_score_distribution = F.softmax(tgt_score_avg, dim=0)
+            dis_loss_1 = F.kl_div(F.log_softmax(tgt_score1, dim=0), tgt_score_distribution)
+            dis_loss_2 = F.kl_div(F.log_softmax(tgt_score2, dim=0), tgt_score_distribution)
+            loss_step3 = (dis_loss_1 + dis_loss_2) / 2.
+            if torch.isnan(loss_step3) or torch.isinf(loss_step3):
+                print('Skip the NaN or INF loss in step 3')
+                continue
+
+            optimizer_g.zero_grad()
+            optimizer_c1.zero_grad()
+            optimizer_c2.zero_grad()
+            loss_step3.backward()
+            optimizer_g.step()
+
+    epoch_kl_loss_1 = running_kl_loss_1 / len(train_src_loader)
+    epoch_kl_loss_2 = running_kl_loss_2 / len(train_src_loader)
+    epoch_dis_loss = running_dis_loss / len(train_src_loader)
+    writer.add_scalar('data/train_kl_loss_1_epoch', epoch_kl_loss_1, epoch)
+    writer.add_scalar('data/train_kl_loss_2_epoch', epoch_kl_loss_2, epoch)
+    writer.add_scalar('data/train_dis_loss_epoch', epoch_dis_loss, epoch)
+
+    print("[Train] Epoch: {}/{} KL Loss 1: {} KL Loss 2: {} DA Loss: {}".format(epoch + 1, opt.epochs, epoch_kl_loss_1,
+                                                                                epoch_kl_loss_2, epoch_dis_loss))
     stop_time = timeit.default_timer()
     print("Execution time: " + str(stop_time - start_time) + "\n")
 
@@ -174,8 +250,11 @@ def train_model(epoch, train_src_loader, train_tgt_loader, encoder, transformer,
             'epoch': epoch + 1,
             'encoder': encoder.state_dict(),
             'transformer': transformer.state_dict(),
-            'score_model': score_model.state_dict(),
-            'optimizer': optimizer.state_dict(),
+            'score_model1': score_model1.state_dict(),
+            'score_model2': score_model2.state_dict(),
+            'optimizer_g': optimizer_g.state_dict(),
+            'optimizer_c1': optimizer_c1.state_dict(),
+            'optimizer_c2': optimizer_c2.state_dict(),
         }, os.path.join(save_dir, 'models', save_name + '_epoch-' + str(epoch) + '.pth'))
         print("Save model at {}\n".format(
             os.path.join(save_dir, 'models', save_name + '_epoch-' + str(epoch) + '.pth')))
@@ -184,11 +263,12 @@ def train_model(epoch, train_src_loader, train_tgt_loader, encoder, transformer,
 
 ###################################
 
-def test_model(epoch, test_loader, encoder, transformer, score_model, writer, epsilon=1e-5):
+def test_model(epoch, test_loader, encoder, transformer, score_model1, score_model2, writer, epsilon=1e-5):
     # Evaluate the highlight score for each test segment
     encoder.eval()
     transformer.eval()
-    score_model.eval()
+    score_model1.eval()
+    score_model2.eval()
 
     start_time = timeit.default_timer()
     video_scores = dict()
@@ -205,10 +285,14 @@ def test_model(epoch, test_loader, encoder, transformer, score_model, writer, ep
             emb_ = emb.unsqueeze(0)
             transformed_emb_ = transformer(emb_)
             transformed_emb = transformed_emb_.squeeze(0)
-            score = score_model(transformed_emb).squeeze(-1)
+            score1 = score_model1(transformed_emb).squeeze(-1)
+            score2 = score_model2(transformed_emb).squeeze(-1)
         else:
-            score = score_model(emb).squeeze(-1)
-        score = torch.sigmoid(score) * 2. - 1.
+            score1 = score_model1(emb).squeeze(-1)
+            score2 = score_model2(emb).squeeze(-1)
+        score1 = torch.sigmoid(score1) * 2. - 1.
+        score2 = torch.sigmoid(score2) * 2. - 1.
+        score = (score1 + score2) / 2.
 
         if torch.any(torch.isnan(score)) or torch.any(torch.isinf(score)):
             print('Skip invalid samples')
@@ -258,16 +342,24 @@ if __name__ == "__main__":
         encoder = C3D_model.C3D(pretrained=True, feature_extraction=True)
         transformer = transformer.Transformer(dim=4096, depth=opt.depth, heads=opt.heads, mlp_dim=opt.mlp_dim,
                                               dropout=opt.dropout_ratio)
-        score_model = score_net.ScoreFCN(emb_dim=4096)
-        train_params = [{'params':C3D_model.get_1x_lr_params(encoder), 'lr': opt.lr * 0.1},
-                        {'params':transformer.parameters(), 'lr': opt.lr},
-                        {'params':score_model.parameters(), 'lr': opt.lr}]
+        score_model1 = score_net.ScoreFCN(emb_dim=4096)
+        score_model2 = score_net.ScoreFCN(emb_dim=4096)
+
+        params_g = [{'params':C3D_model.get_1x_lr_params(encoder), 'lr': opt.lr * 0.1},
+                    {'params':transformer.parameters(), 'lr': opt.lr}]
+        params_c1 = [{'params': score_model1.parameters(), 'lr': opt.lr}]
+        params_c2 = [{'params': score_model2.parameters(), 'lr': opt.lr}]
     else:
         print('We only consider to use C3D model for feature extraction')
         raise NotImplementedError
 
-    optimizer = optim.SGD(train_params, lr=opt.lr, momentum=0.9, weight_decay=5e-4)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
+    optimizer_g = optim.SGD(params_g, lr=opt.lr, momentum=0.9, weight_decay=5e-4)
+    optimizer_c1 = optim.SGD(params_c1, lr=opt.lr, momentum=0.9, weight_decay=5e-4)
+    optimizer_c2 = optim.SGD(params_c2, lr=opt.lr, momentum=0.9, weight_decay=5e-4)
+
+    scheduler_g = optim.lr_scheduler.StepLR(optimizer_g, step_size=20, gamma=0.1)
+    scheduler_c1 = optim.lr_scheduler.StepLR(optimizer_c1, step_size=20, gamma=0.1)
+    scheduler_c2 = optim.lr_scheduler.StepLR(optimizer_c2, step_size=20, gamma=0.1)
 
     if opt.resume_epoch == 0:
         print("Training from scratch...")
@@ -278,12 +370,16 @@ if __name__ == "__main__":
             os.path.join(save_dir, 'models', save_name + '_epoch-' + str(opt.resume_epoch - 1) + '.pth')))
         encoder.load_state_dict(checkpoint['encoder'])
         transformer.load_state_dict(checkpoint['transformer'])
-        score_model.load_state_dict(checkpoint['score_model'])
-        optimizer.load_state_dict(checkpoint['optimizer'])
+        score_model1.load_state_dict(checkpoint['score_model1'])
+        score_model2.load_state_dict(checkpoint['score_model2'])
+        optimizer_g.load_state_dict(checkpoint['optimizer_g'])
+        optimizer_c1.load_state_dict(checkpoint['optimizer_c1'])
+        optimizer_c2.load_state_dict(checkpoint['optimizer_c2'])
 
     encoder.to(device)
     transformer.to(device)
-    score_model.to(device)
+    score_model1.to(device)
+    score_model2.to(device)
 
     log_dir = os.path.join(save_dir, 'models', datetime.now().strftime('%b%d_%H-%M-%S') + '_' + socket.gethostname())
     writer = SummaryWriter(log_dir=log_dir)
@@ -302,10 +398,11 @@ if __name__ == "__main__":
     best_test = 0
 
     for epoch in range(opt.resume_epoch, opt.epochs):
-        train_model(epoch, train_src_loader, train_tgt_loader, encoder, transformer, score_model, optimizer, scheduler, writer)
+        train_model(epoch, train_src_loader, train_tgt_loader, encoder, transformer, score_model1, score_model2,
+                    optimizer_g, optimizer_c1, optimizer_c2, scheduler_g, scheduler_c1, scheduler_c2, writer)
 
         if opt.use_test or epoch % opt.test_interval == (opt.test_interval - 1):
-            test_result = test_model(epoch, test_loader, encoder, transformer, score_model, writer)
+            test_result = test_model(epoch, test_loader, encoder, transformer, score_model1, score_model2, writer)
             if test_result > best_test:
                 best_test = test_result
             print('Best test performance: ', best_test)
