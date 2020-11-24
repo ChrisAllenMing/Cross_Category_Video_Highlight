@@ -44,6 +44,31 @@ def mmd_rbf_noaccelerate(source, target, kernel_mul=2.0, kernel_num=5, fix_sigma
 
     return loss
 
+def seq_mmd_rbf(src_emb, tgt_emb, src_score, tgt_score, tau=1.0, kernel_mul=2.0, kernel_num=5, fix_sigma=None):
+    batch_size = int(src_emb.size()[0])
+    kernels = guassian_kernel(src_emb, tgt_emb,
+                              kernel_mul=kernel_mul, kernel_num=kernel_num, fix_sigma=fix_sigma)
+
+    # score = torch.cat([src_score, tgt_score], dim=0).data
+    score = torch.cat([src_score, tgt_score], dim=0)
+    dist = (score.unsqueeze(1) - score.unsqueeze(0)) ** 2
+    sim = torch.exp(-dist / tau)
+    sim_ = 1 - sim
+    mask = torch.ones_like(sim)
+    mask[:batch_size, :batch_size] = 0
+    mask[batch_size:, batch_size:] = 0
+    # weight = sim * mask + sim_ * (1 - mask)
+    weight = sim * mask + (1 - mask)
+    kernels = kernels * weight
+
+    XX = kernels[:batch_size, :batch_size]
+    YY = kernels[batch_size:, batch_size:]
+    XY = kernels[:batch_size, batch_size:]
+    YX = kernels[batch_size:, :batch_size]
+    loss = torch.mean(XX + YY - XY - YX)
+
+    return loss
+
 def coral_distance(source, target):
     d = source.data.shape[1]
 

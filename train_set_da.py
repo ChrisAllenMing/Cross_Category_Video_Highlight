@@ -46,7 +46,9 @@ parser.add_argument('--heads', type=int, default=8, help = 'the number of attent
 parser.add_argument('--mlp_dim', type=int, default=8192, help = 'the dimension of the internal feature in MLP')
 parser.add_argument('--smooth_ratio', type=float, default=0.05, help = 'the extent of distribution smoothing')
 parser.add_argument('--da_weight', type=float, default=1.0, help = 'the weight of domain adaptation loss')
-parser.add_argument('--da_metric', type=str, default='mmd', help='metric for domain adaptation: mmd or coral')
+parser.add_argument('--da_metric', type=str, default='mmd',
+                    help='metric for domain adaptation: mmd, seq-mmd, coral or entropy')
+parser.add_argument('--tau', type=float, default=1.0, help='the temperature parameter')
 parser.add_argument('--use_test', action = 'store_true', default = False,
                     help = 'whether to evaluate the model every epoch')
 parser.add_argument('--test_interval', type = int, default = 20, help = 'the interval between tests')
@@ -139,14 +141,43 @@ def train_model(epoch, train_src_loader, train_tgt_loader, encoder, transformer,
             da_loss_func = mmd_rbf_noaccelerate
         elif opt.da_metric == 'coral':
             da_loss_func = coral_distance
+        elif opt.da_metric == 'seq-mmd':
+            da_loss_func = seq_mmd_rbf
+        elif opt.da_metric == 'entropy':
+            pass
         else:
-            raise ValueError('Currently, only implement mmd and coral loss')
+            raise ValueError('Currently, only implement mmd, coral and entropy loss')
 
-        min_set_size = min(emb.shape[0], tgt_emb.shape[0])
-        if opt.use_transformer:
-            da_loss = da_loss_func(transformed_emb[:min_set_size, :], tgt_transformed_emb[:min_set_size, :])
+        if opt.da_metric == 'mmd' or opt.da_metric == 'coral':
+            min_set_size = min(emb.shape[0], tgt_emb.shape[0])
+            if opt.use_transformer:
+                da_loss = da_loss_func(transformed_emb[:min_set_size, :], tgt_transformed_emb[:min_set_size, :])
+            else:
+                da_loss = da_loss_func(emb[:min_set_size, :], tgt_emb[:min_set_size, :])
+        elif opt.da_metric == 'seq-mmd':
+            if opt.use_transformer:
+                tgt_score = score_model(tgt_transformed_emb).squeeze(-1)
+            else:
+                tgt_score = score_model(tgt_emb).squeeze(-1)
+            tgt_score = torch.sigmoid(tgt_score) * 2. - 1.
+
+            min_set_size = min(emb.shape[0], tgt_emb.shape[0])
+            if opt.use_transformer:
+                da_loss = da_loss_func(transformed_emb[:min_set_size, :], tgt_transformed_emb[:min_set_size, :],
+                                       score[:min_set_size], tgt_score[:min_set_size], tau=opt.tau)
+            else:
+                da_loss = da_loss_func(emb[:min_set_size, :], tgt_emb[:min_set_size, :],
+                                       score[:min_set_size], tgt_score[:min_set_size], tau=opt.tau)
+        elif opt.da_metric == 'entropy':
+            if opt.use_transformer:
+                tgt_score = score_model(tgt_transformed_emb).squeeze(-1)
+            else:
+                tgt_score = score_model(tgt_emb).squeeze(-1)
+            tgt_score = torch.sigmoid(tgt_score) * 2. - 1.
+            tgt_distribution = F.softmax(tgt_score, dim=0)
+            da_loss = (-tgt_distribution * torch.log(tgt_distribution)).sum()
         else:
-            da_loss = da_loss_func(emb[:min_set_size, :], tgt_emb[:min_set_size, :])
+            da_loss = 0
 
         loss = kl_loss + opt.da_weight * da_loss
 
@@ -259,9 +290,16 @@ if __name__ == "__main__":
         transformer = transformer.Transformer(dim=4096, depth=opt.depth, heads=opt.heads, mlp_dim=opt.mlp_dim,
                                               dropout=opt.dropout_ratio)
         score_model = score_net.ScoreFCN(emb_dim=4096)
-        train_params = [{'params':C3D_model.get_1x_lr_params(encoder), 'lr': opt.lr * 0.1},
-                        {'params':transformer.parameters(), 'lr': opt.lr},
-                        {'params':score_model.parameters(), 'lr': opt.lr}]
+        if opt.da_metric in ['mmd', 'seq-mmd', 'coral']:
+            train_params = [{'params':C3D_model.get_1x_lr_params(encoder), 'lr': opt.lr * 0.1},
+                            {'params':transformer.parameters(), 'lr': opt.lr},
+                            {'params':score_model.parameters(), 'lr': opt.lr}]
+        elif opt.da_metric == 'entropy':
+            train_params = [{'params': C3D_model.get_1x_lr_params(encoder), 'lr': 0},
+                            {'params': transformer.parameters(), 'lr': opt.lr},
+                            {'params': score_model.parameters(), 'lr': opt.lr}]
+        else:
+            raise ValueError('Currently, only implement mmd, coral and entropy loss')
     else:
         print('We only consider to use C3D model for feature extraction')
         raise NotImplementedError
