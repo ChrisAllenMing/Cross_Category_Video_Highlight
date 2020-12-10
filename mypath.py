@@ -32,6 +32,11 @@ class Path(object):
             output_dir = '/opt/tiger/data/video_highlights/YouTube_Highlights_processed'
 
             return root_dir, output_dir
+        elif database == 'ActivityNet':
+            root_dir = '/opt/tiger/data/ActivityNet/data'
+            output_dir = '/opt/tiger/data/ActivityNet/processed_data'
+
+            return root_dir, output_dir
         else:
             print('Database {} not available.'.format(database))
             raise NotImplementedError

@@ -21,6 +21,7 @@ import numpy as np
 
 # from dataloaders.dataset import VideoDataset
 from dataloaders.youtube_highlights_set import YouTube_Highlights_Set
+from dataloaders.activity_net_set import ActivityNet_Set
 from network import C3D_model, R2Plus1D_model, R3D_model
 from network import transformer
 from network import score_net
@@ -249,10 +250,18 @@ if __name__ == "__main__":
     writer = SummaryWriter(log_dir=log_dir)
 
     print('Start training on {} dataset...'.format(opt.dataset))
-    train_dataset = YouTube_Highlights_Set(dataset=opt.dataset, split='train', category=opt.src_category,
-                                           clip_len=opt.clip_len, set_size=opt.set_size)
-    test_dataset = YouTube_Highlights_Set(dataset=opt.dataset, split='test', category=opt.tgt_category,
-                                          clip_len=opt.clip_len, set_size=opt.set_size)
+    if opt.dataset == 'YouTube_Highlights':
+        train_dataset = YouTube_Highlights_Set(dataset=opt.dataset, split='train', category=opt.src_category,
+                                               clip_len=opt.clip_len, set_size=opt.set_size)
+        test_dataset = YouTube_Highlights_Set(dataset=opt.dataset, split='test', category=opt.tgt_category,
+                                              clip_len=opt.clip_len, set_size=opt.set_size)
+    elif opt.dataset == 'ActivityNet':
+        train_dataset = ActivityNet_Set(dataset=opt.dataset, split='train', category=opt.src_category,
+                                        clip_len=opt.clip_len, set_size=opt.set_size)
+        test_dataset = ActivityNet_Set(dataset=opt.dataset, split='validation', category=opt.tgt_category,
+                                       clip_len=opt.clip_len, set_size=opt.set_size)
+    else:
+        raise ValueError('The {} dataset has not been supported yet.'.format(opt.dataset))
 
     train_loader = DataLoader(train_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=1)
     test_loader = DataLoader(test_dataset, batch_size=opt.batch_size, shuffle=False, num_workers=1)

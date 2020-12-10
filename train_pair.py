@@ -17,9 +17,11 @@ from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from sklearn.metrics import average_precision_score
 import numpy as np
+import math
 
 # from dataloaders.dataset import VideoDataset
 from dataloaders.youtube_highlights import YouTube_Highlights
+from dataloaders.activity_net import ActivityNet
 from network import C3D_model, R2Plus1D_model, R3D_model
 from network import score_net
 
@@ -161,6 +163,9 @@ def test_model(epoch, test_loader, encoder, score_model, writer, epsilon=1e-5):
         tmp_labels = np.float32(tmp_labels > 0)
 
         ap = average_precision_score(tmp_labels, tmp_scores)
+        if math.isnan(ap) or math.isinf(ap):
+            print('Skip invalid test video')
+            continue
         aps.append(ap)
 
     map = np.array(aps).mean()
@@ -202,10 +207,18 @@ if __name__ == "__main__":
     writer = SummaryWriter(log_dir=log_dir)
 
     print('Start training on {} dataset...'.format(opt.dataset))
-    train_dataset = YouTube_Highlights(dataset=opt.dataset, split='train', category=opt.src_category,
-                                       clip_len=opt.clip_len)
-    test_dataset = YouTube_Highlights(dataset=opt.dataset, split='test', category = opt.tgt_category,
-                                      clip_len=opt.clip_len)
+    if opt.dataset == 'YouTube_Highlights':
+        train_dataset = YouTube_Highlights(dataset=opt.dataset, split='train', category=opt.src_category,
+                                           clip_len=opt.clip_len)
+        test_dataset = YouTube_Highlights(dataset=opt.dataset, split='test', category = opt.tgt_category,
+                                          clip_len=opt.clip_len)
+    elif opt.dataset == 'ActivityNet':
+        train_dataset = ActivityNet(dataset=opt.dataset, split='train', category=opt.src_category,
+                                    clip_len=opt.clip_len)
+        test_dataset = ActivityNet(dataset=opt.dataset, split='validation', category = opt.tgt_category,
+                                   clip_len=opt.clip_len)
+    else:
+        raise ValueError('The {} dataset has not been supported yet.'.format(opt.dataset))
 
     train_loader = DataLoader(train_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=1)
     test_loader = DataLoader(test_dataset, batch_size=opt.batch_size, num_workers=1)
