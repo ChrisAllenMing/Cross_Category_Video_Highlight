@@ -1,40 +1,9 @@
 class Path(object):
     @staticmethod
     def db_dir(database):
-        if database == 'ucf101':
-            # folder that contains class labels
-            root_dir = '/Path/to/UCF-101'
-
-            # Save preprocess data into output_dir
-            output_dir = '/path/to/VAR/ucf101'
-
-            return root_dir, output_dir
-        elif database == 'hmdb51':
-            # folder that contains class labels
-            root_dir = '/Path/to/hmdb-51'
-
-            output_dir = '/path/to/VAR/hmdb51'
-
-            return root_dir, output_dir
-        elif database == 'YouTube_Highlights':
-            # the direction to the raw data
-            # root_dir = './datasets/YouTube_Highlights'
-            # root_dir = '/Users/admin/Desktop/datasets/YouTube_Highlights'
-            # root_dir = '/home/xuminghao.118/data/video_highlights/YouTube_Highlights'
-            # root_dir = 'hdfs://haruna/home/byte_arnold_hl_vc/xuminghao.118/data/video_highlights/YouTube_Highlights'
-            root_dir = '/opt/tiger/data/video_highlights/YouTube_Highlights'
-
-            # the direction to the preprocessed data
-            # output_dir = './datasets/YouTube_Highlights_processed'
-            # output_dir = '/Users/admin/Desktop/datasets/YouTube_Highlights_processed'
-            # output_dir = '/home/xuminghao.118/data/video_highlights/YouTube_Highlights_processed'
-            # output_dir = 'hdfs://haruna/home/byte_arnold_hl_vc/xuminghao.118/data/video_highlights/YouTube_Highlights_processed'
-            output_dir = '/opt/tiger/data/video_highlights/YouTube_Highlights_processed'
-
-            return root_dir, output_dir
-        elif database == 'ActivityNet':
-            root_dir = '/opt/tiger/data/ActivityNet/data'
-            output_dir = '/opt/tiger/data/ActivityNet/processed_data'
+        if database == 'YouTube_Highlights':
+            root_dir = '~/data/YouTube_Highlights'
+            output_dir = '~/data/YouTube_Highlights_processed'
 
             return root_dir, output_dir
         else:
@@ -43,7 +12,6 @@ class Path(object):
 
     @staticmethod
     def model_dir():
-        # return '/Users/admin/Desktop/code/pretrained_models/c3d-pretrained.pth'
-        # return '/home/xuminghao.118/pretrained_models/c3d-pretrained.pth'
-        # return 'hdfs://haruna/home/byte_arnold_hl_vc/xuminghao.118/pretrained_models/c3d-pretrained.pth'
-        return '/opt/tiger/pretrained_models/c3d-pretrained.pth'
+        pretrained_model_dir = '~/pretrained_models/c3d-pretrained.pth'
+
+        return pretrained_model_dir

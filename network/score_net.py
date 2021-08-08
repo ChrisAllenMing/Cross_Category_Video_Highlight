@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from mypath import Path
 
 class ScoreFCN(nn.Module):
     def __init__(self, emb_dim = 4096, dropout_ratio = 0.5):

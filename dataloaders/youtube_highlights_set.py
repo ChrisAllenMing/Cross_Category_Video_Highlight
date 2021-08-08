@@ -4,7 +4,6 @@ from mypath import Path
 
 import torch
 import cv2
-import pdb
 import math
 import json
 import shutil
@@ -14,20 +13,19 @@ from torch.utils.data import Dataset
 from sklearn.model_selection import train_test_split
 
 class YouTube_Highlights_Set(Dataset):
-    r"""A Dataset for a folder of videos. Expects the directory structure to be
-    directory->[train/val/test]->[class labels]->[videos]->[segments]. Initializes with a list
-    of all file names, along with an array of labels, with label being automatically
-    inferred from the respective folder names.
+    r"""YouTube Highlights Dataset for set-based learning. Expects the directory structure to be
+    directory->[train/val/test]->[class labels]->[videos]->[segments].
 
         Args:
             dataset (str): Name of dataset. Defaults to 'YouTube_Highlights'.
             split (str): Determines which folder of the directory the dataset will read from. Defaults to 'train'.
+            category (str): Determines which video category to use. Defaults to 'surfing'
             clip_len (int): Determines how many frames are there in each clip. Defaults to 100.
-            set_size (int): Determines how many clips in the set for learning
+            set_size (int): Determines how many clips in the set for learning. Defaults to 20.
             preprocess (bool): Determines whether to preprocess dataset. Default is False.
     """
 
-    def __init__(self, dataset='YouTube_Highlights', split='train', category = 'surfing', clip_len=100, set_size=32,
+    def __init__(self, dataset='YouTube_Highlights', split='train', category = 'surfing', clip_len=100, set_size=20,
                  preprocess=False):
         self.root_dir, self.output_dir = Path.db_dir(dataset)
         self.clip_len = clip_len
@@ -37,7 +35,6 @@ class YouTube_Highlights_Set(Dataset):
         self.category = category
         folder = os.path.join(self.output_dir, split, category)
 
-        # The following three parameters are chosen as described in the paper section 4.1
         self.resize_height = 128
         self.resize_width = 171
         self.crop_size = 112
@@ -57,7 +54,6 @@ class YouTube_Highlights_Set(Dataset):
             self.preprocess()
 
         # Obtain all the filename of segments and the corresponding label
-        # Going through each class folder one at a time
         self.fnames = list()
         self.video_names = list()
         self.segment2index = dict()
@@ -200,7 +196,6 @@ class YouTube_Highlights_Set(Dataset):
         print('Preprocessing finished.')
 
     def process_video(self, video_label, category, save_dir):
-        # video_name = video_label[1].split('.')[0]
         video_name = video_label[0]
         if not os.path.exists(os.path.join(save_dir, category)):
             os.mkdir(os.path.join(save_dir, category))
@@ -224,6 +219,7 @@ class YouTube_Highlights_Set(Dataset):
         cnt = 0
         retaining = True
 
+        # Process the original video to segments
         while cnt < frame_cnt and retaining:
             retaining, frame = capture.read()
             if frame is None:
@@ -272,7 +268,6 @@ class YouTube_Highlights_Set(Dataset):
                 buffer[i] = cv2.flip(frame, flipCode=1)
 
         return buffer
-
 
     def normalize(self, buffer):
         for i, segment in enumerate(buffer):
@@ -349,9 +344,7 @@ class YouTube_Highlights_Set(Dataset):
         height_index = np.random.randint(buffer.shape[2] - crop_size)
         width_index = np.random.randint(buffer.shape[3] - crop_size)
 
-        # Crop and jitter the video using indexing. The spatial crop is performed on
-        # the entire array, so each frame is cropped in the same location. The temporal
-        # jitter takes place via the selection of consecutive frames
+        # Crop the buffer
         buffer = buffer[:, time_index:time_index + clip_len,
                  height_index:height_index + crop_size,
                  width_index:width_index + crop_size, :]
@@ -360,9 +353,9 @@ class YouTube_Highlights_Set(Dataset):
 
 if __name__ == "__main__":
     from torch.utils.data import DataLoader
-    train_data = YouTube_Highlights_Set(dataset='YouTube_Highlights', split='train', clip_len=16, set_size=32,
+    train_data = YouTube_Highlights_Set(dataset='YouTube_Highlights', split='train', clip_len=16, set_size=20,
                                         preprocess=False)
-    test_data = YouTube_Highlights_Set(dataset='YouTube_Highlights', split='test', clip_len=16, set_size=32,
+    test_data = YouTube_Highlights_Set(dataset='YouTube_Highlights', split='test', clip_len=16, set_size=20,
                                        preprocess=False)
     train_loader = DataLoader(train_data, batch_size=1, shuffle=True, num_workers=1)
     test_loader = DataLoader(test_data, batch_size=1, shuffle=False, num_workers=1)

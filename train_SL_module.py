@@ -15,14 +15,11 @@ import torch.nn.functional as F
 from tensorboardX import SummaryWriter
 from torch import nn, optim
 from torch.utils.data import DataLoader
-from torch.autograd import Variable
 from sklearn.metrics import average_precision_score
 import numpy as np
 
-# from dataloaders.dataset import VideoDataset
 from dataloaders.youtube_highlights_set import YouTube_Highlights_Set
-from dataloaders.activity_net_set import ActivityNet_Set
-from network import C3D_model, R2Plus1D_model, R3D_model
+from network import C3D_model
 from network import transformer
 from network import score_net
 
@@ -33,22 +30,18 @@ parser.add_argument('--dataset', type = str, default = 'YouTube_Highlights', hel
 parser.add_argument('--src_category', type = str, default = 'surfing', help = 'the category of videos to train on')
 parser.add_argument('--tgt_category', type = str, default = 'surfing', help = 'the category of videos to test on')
 parser.add_argument('--model', type = str, default = 'C3D', help = 'the name of the model')
-parser.add_argument('--epochs', type = int, default = 100, help = 'the number of training epochs')
+parser.add_argument('--epochs', type = int, default = 50, help = 'the number of training epochs')
 parser.add_argument('--resume_epoch', type = int, default = 0, help = 'the epoch that the model store from')
 parser.add_argument('--lr', type = float, default = 0.001, help = 'the learning rate')
 parser.add_argument('--dropout_ratio', type = float, default = 0.5, help = 'the dropout ratio')
 parser.add_argument('--batch_size', type = int, default = 1, help = 'the batch size')
-parser.add_argument('--set_size', type = int, default = 32, help = 'the maximum size of a set')
+parser.add_argument('--set_size', type = int, default = 20, help = 'the maximum size of a set')
 parser.add_argument('--clip_len', type = int, default = 16, help = 'the length of each video clip')
 parser.add_argument('--use_transformer', action = 'store_true', default=False, help = 'whether to use transformer')
 parser.add_argument('--depth', type=int, default=5, help = 'the depth of transformer')
 parser.add_argument('--heads', type=int, default=8, help = 'the number of attention heads in transformer')
 parser.add_argument('--mlp_dim', type=int, default=8192, help = 'the dimension of the internal feature in MLP')
-parser.add_argument('--smooth_ratio', type=float, default=0.05, help = 'the extent of distribution smoothing')
-parser.add_argument('--use_test', action = 'store_true', default = False,
-                    help = 'whether to evaluate the model every epoch')
-parser.add_argument('--test_interval', type = int, default = 20, help = 'the interval between tests')
-parser.add_argument('--snapshot', type = int, default = 20, help = 'the interval between save models')
+parser.add_argument('--snapshot', type = int, default = 5, help = 'the interval between save models')
 parser.add_argument('--gpu_id', type = str, default = None, help = 'the gpu device id')
 
 opt = parser.parse_args()
@@ -78,8 +71,7 @@ save_name = opt.model + '_' + opt.dataset
 ###################################
 
 def train_model(epoch, train_loader, encoder, transformer, score_model, optimizer, scheduler, writer, epsilon=1e-5):
-    # Train the transformer and score model to predict the score distribution of a set of video segments
-    encoder.train()
+    # Train the transformer and scoring model to predict the score distribution of a set of video segments
     transformer.train()
     score_model.train()
     scheduler.step()
@@ -106,13 +98,7 @@ def train_model(epoch, train_loader, encoder, transformer, score_model, optimize
             score = score_model(emb).squeeze(-1)
         score = torch.sigmoid(score) * 2. - 1.
 
-        # score_distribution = score / (score.sum() + epsilon)
-        # label_distribution = labels / (labels.sum() + epsilon)
-        # label_distribution = (1 - opt.smooth_ratio) * label_distribution + \
-        #                      opt.smooth_ratio * torch.ones_like(label_distribution) / label_distribution.shape[0]
         label_distribution = F.softmax(labels, dim=0)
-
-        # kl_loss = F.kl_div(torch.log(score_distribution), label_distribution)
         kl_loss = F.kl_div(F.log_softmax(score, dim=0), label_distribution)
         if torch.isnan(kl_loss) or torch.isinf(kl_loss):
             print('Skip the NaN or INF loss')
@@ -147,7 +133,6 @@ def train_model(epoch, train_loader, encoder, transformer, score_model, optimize
 
 def test_model(epoch, test_loader, encoder, transformer, score_model, writer, epsilon=1e-5):
     # Evaluate the highlight score for each test segment
-    encoder.eval()
     transformer.eval()
     score_model.eval()
 
@@ -196,12 +181,10 @@ def test_model(epoch, test_loader, encoder, transformer, score_model, writer, ep
         tmp_scores = np.array(video_scores[video_id], dtype=np.float64)
         large_scores = np.float64(tmp_scores > 200)
         tmp_scores = tmp_scores * (1 - large_scores) + 200. * large_scores
-        # tmp_scores = tmp_scores / (tmp_scores.sum() + epsilon)
         tmp_scores = np.exp(tmp_scores) / (np.exp(tmp_scores).sum() + epsilon)
 
         tmp_labels = np.array(video_labels[video_id], dtype=np.float64)
         tmp_labels = np.float64(tmp_labels > 0)
-        # tmp_labels = np.exp(tmp_labels) / (np.exp(tmp_labels).sum() + epsilon)
 
         ap = average_precision_score(tmp_labels, tmp_scores)
         aps.append(ap)
@@ -210,18 +193,18 @@ def test_model(epoch, test_loader, encoder, transformer, score_model, writer, ep
     writer.add_scalar('data/test_map_epoch', map, epoch)
     print("[Test] Epoch: {}/{} mAP: {}".format(epoch + 1, opt.epochs, map))
 
-    return map
+    return 
 
 ###################################
 
 if __name__ == "__main__":
+    # Define the model
     if opt.model == 'C3D':
         encoder = C3D_model.C3D(pretrained=True, feature_extraction=True)
         transformer = transformer.Transformer(dim=4096, depth=opt.depth, heads=opt.heads, mlp_dim=opt.mlp_dim,
                                               dropout=opt.dropout_ratio)
         score_model = score_net.ScoreFCN(emb_dim=4096)
-        train_params = [{'params':C3D_model.get_1x_lr_params(encoder), 'lr': 0},
-                        {'params':transformer.parameters(), 'lr': opt.lr},
+        train_params = [{'params':transformer.parameters(), 'lr': opt.lr},
                         {'params':score_model.parameters(), 'lr': opt.lr}]
     else:
         print('We only consider to use C3D model for feature extraction')
@@ -249,33 +232,24 @@ if __name__ == "__main__":
     log_dir = os.path.join(save_dir, 'models', datetime.now().strftime('%b%d_%H-%M-%S') + '_' + socket.gethostname())
     writer = SummaryWriter(log_dir=log_dir)
 
+    # Define the data
     print('Start training on {} dataset...'.format(opt.dataset))
     if opt.dataset == 'YouTube_Highlights':
         train_dataset = YouTube_Highlights_Set(dataset=opt.dataset, split='train', category=opt.src_category,
                                                clip_len=opt.clip_len, set_size=opt.set_size)
         test_dataset = YouTube_Highlights_Set(dataset=opt.dataset, split='test', category=opt.tgt_category,
                                               clip_len=opt.clip_len, set_size=opt.set_size)
-    elif opt.dataset == 'ActivityNet':
-        train_dataset = ActivityNet_Set(dataset=opt.dataset, split='train', category=opt.src_category,
-                                        clip_len=opt.clip_len, set_size=opt.set_size)
-        test_dataset = ActivityNet_Set(dataset=opt.dataset, split='validation', category=opt.tgt_category,
-                                       clip_len=opt.clip_len, set_size=opt.set_size)
     else:
-        raise ValueError('The {} dataset has not been supported yet.'.format(opt.dataset))
+        raise ValueError('Only YouTube Highlights is included in this demo project.')
 
     train_loader = DataLoader(train_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=1)
     test_loader = DataLoader(test_dataset, batch_size=opt.batch_size, shuffle=False, num_workers=1)
-    best_test = 0
 
+    # Training 
     for epoch in range(opt.resume_epoch, opt.epochs):
         train_model(epoch, train_loader, encoder, transformer, score_model, optimizer, scheduler, writer)
 
-        if opt.use_test or epoch % opt.test_interval == (opt.test_interval - 1):
-            test_result = test_model(epoch, test_loader, encoder, transformer, score_model, writer)
-            if test_result > best_test:
-                best_test = test_result
-            print('Best test performance: ', best_test)
-
-    print('Best test performance: ', best_test)
+    # Evaluation
+    test_model(epoch, test_loader, encoder, transformer, score_model, writer)
 
     writer.close()
