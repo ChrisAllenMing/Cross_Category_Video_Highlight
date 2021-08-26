@@ -83,7 +83,7 @@ If this work helps your research, you can kindly cite the following paper (will 
 ```
 @article{xu2021cross-category,
   title={Cross-category Video Highlight Detection via Set-based Learning},
-  author={Xu, Minghao and Wang, Hang and Ni, Bingbing and Zhu, Riheng and Sun Zhenbang and Wang Changhu},
+  author={Xu, Minghao and Wang, Hang and Ni, Bingbing and Zhu, Riheng and Sun, Zhenbang and Wang, Changhu},
   journal={arXiv preprint arXiv:},
   year={2021}
 }
