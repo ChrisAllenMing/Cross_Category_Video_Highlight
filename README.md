@@ -1,7 +1,7 @@
 # Cross-category Video Highlight Detection via Set-based Learning
 
 <p align="center">
-  <img src="docs/problem_setting.png" width="300" /> 
+  <img src="docs/problem_setting.png" width="700" /> 
 </p>
 
 ## Introduction
