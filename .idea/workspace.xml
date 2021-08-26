@@ -20,39 +20,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="81e16e70-cd6c-43e1-afc5-86430c01d35a" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/LICENSE" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/demo1.gif" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/demo2.gif" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/hmdb51_results.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/ucf101_results.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/da_metrics.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dataloaders/activity_net.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dataloaders/activity_net_set.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dataloaders/dataset.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dataloaders/hmdb_labels.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dataloaders/ucf_labels.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dataloaders/youtube_highlights.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dataloaders/youtube_highlights_set.py" beforeDir="false" afterPath="$PROJECT_DIR$/dataloaders/youtube_highlights_set.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/hdfs_utils.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/inference.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/mypath.py" beforeDir="false" afterPath="$PROJECT_DIR$/mypath.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/network/C3D_model.py" beforeDir="false" afterPath="$PROJECT_DIR$/network/C3D_model.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/network/P3D_model.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/network/R2Plus1D_model.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/network/R3D_model.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/network/score_net.py" beforeDir="false" afterPath="$PROJECT_DIR$/network/score_net.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/process_dataset.sh" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/sleep.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/sleep.sh" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/train.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/train.sh" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/train_pair.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/train_set.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/train_set_da.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/train_set_dual.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/train_set_mix.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -142,6 +110,7 @@
         </entry>
       </map>
     </option>
+    <option name="oldMeFiltersMigrated" value="true" />
   </component>
   <component name="WindowStateProjectService">
     <state x="424" y="202" key="#com.intellij.execution.impl.EditConfigurationsDialog" timestamp="1602827102847">
