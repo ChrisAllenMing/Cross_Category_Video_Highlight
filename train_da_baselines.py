@@ -24,13 +24,14 @@ from dataloaders.activity_net_set import ActivityNet_Set
 from network import C3D_model
 from network import transformer
 from network import score_net
+from da_metrics import *
 
 ###################################
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type = str, default = 'YouTube_Highlights', help = 'the dataset name')
 parser.add_argument('--src_category', type = str, default = 'surfing', help = 'the category of videos to train on')
-parser.add_argument('--tgt_category', type = str, default = 'surfing', help = 'the category of videos to test on')
+parser.add_argument('--tgt_category', type = str, default = 'skiing', help = 'the category of videos to test on')
 parser.add_argument('--model', type = str, default = 'C3D', help = 'the name of the model')
 parser.add_argument('--epochs', type = int, default = 50, help = 'the number of training epochs')
 parser.add_argument('--resume_epoch', type = int, default = 0, help = 'the epoch that the model store from')
@@ -43,6 +44,9 @@ parser.add_argument('--use_transformer', action = 'store_true', default=False, h
 parser.add_argument('--depth', type=int, default=5, help = 'the depth of transformer')
 parser.add_argument('--heads', type=int, default=8, help = 'the number of attention heads in transformer')
 parser.add_argument('--mlp_dim', type=int, default=8192, help = 'the dimension of the internal feature in MLP')
+parser.add_argument('--da_weight', type=float, default=1.0, help = 'the weight of domain adaptation loss')
+parser.add_argument('--da_metric', type=str, default='mmd', choices=['mmd', 'coral'],
+                    help='metric for domain adaptation')
 parser.add_argument('--snapshot', type = int, default = 5, help = 'the interval between save models')
 parser.add_argument('--gpu_id', type = str, default = None, help = 'the gpu device id')
 
@@ -72,49 +76,93 @@ save_name = opt.model + '_' + opt.dataset
 
 ###################################
 
-def train_model(epoch, train_loader, encoder, transformer, score_model, optimizer, scheduler, writer, epsilon=1e-5):
-    # Train the transformer and scoring model to predict the score distribution of a set of video segments
+def train_model(epoch, train_src_loader, train_tgt_loader, encoder, transformer, score_model,
+                optimizer, scheduler, writer, epsilon=1e-5):
+    # Train the transformer and score model to predict the score distribution of a set of video segments
+    encoder.train()
     transformer.train()
     score_model.train()
     scheduler.step()
 
+    tgt_data_iter = iter(train_tgt_loader)
+    tgt_num_iter = len(train_tgt_loader)
     start_time = timeit.default_timer()
-    running_loss = 0.0
+    running_kl_loss = 0.0
+    running_da_loss = 0.0
+    iter_cnt = 0
 
-    for inputs, labels in tqdm(train_loader):
+    for inputs, labels in tqdm(train_src_loader):
         # The first dimension is assumed to be 1
         inputs = inputs.float().squeeze(0).to(device)
         labels = labels.float().squeeze(0).to(device)
+
+        # sample the mini-batch of target domain
+        if iter_cnt != 0 and iter_cnt % tgt_num_iter == 0:
+            tgt_data_iter = iter(train_tgt_loader)
+        iter_cnt += 1
+
+        tgt_inputs, _ = next(tgt_data_iter)
+        tgt_inputs = tgt_inputs.float().squeeze(0).to(device)
 
         # Skip the batch if all segments are non-highlight
         if not torch.any(labels > 0):
             continue
 
+        # Get the scores for score category video segments
         emb = encoder(inputs)
+        tgt_emb = encoder(tgt_inputs)
         if opt.use_transformer:
             emb_ = emb.unsqueeze(0)
             transformed_emb_ = transformer(emb_)
             transformed_emb = transformed_emb_.squeeze(0)
             score = score_model(transformed_emb).squeeze(-1)
+
+            tgt_emb_ = tgt_emb.unsqueeze(0)
+            tgt_transformed_emb_ = transformer(tgt_emb_)
+            tgt_transformed_emb = tgt_transformed_emb_.squeeze(0)
         else:
             score = score_model(emb).squeeze(-1)
         score = torch.sigmoid(score) * 2. - 1.
 
+        # Define the supervised loss
         label_distribution = F.softmax(labels, dim=0)
         kl_loss = F.kl_div(F.log_softmax(score, dim=0), label_distribution)
-        if torch.isnan(kl_loss) or torch.isinf(kl_loss):
+
+        # Define the domain adaptation loss
+        if opt.da_metric == 'mmd':
+            da_loss_func = mmd_rbf_noaccelerate
+        elif opt.da_metric == 'coral':
+            da_loss_func = coral_distance
+        else:
+            raise ValueError('Only mmd and coral are available')
+
+        if opt.da_metric in ['mmd', 'coral']:
+            min_set_size = min(emb.shape[0], tgt_emb.shape[0])
+            if opt.use_transformer:
+                da_loss = da_loss_func(transformed_emb[:min_set_size, :], tgt_transformed_emb[:min_set_size, :])
+            else:
+                da_loss = da_loss_func(emb[:min_set_size, :], tgt_emb[:min_set_size, :])
+        else:
+            da_loss = 0
+
+        loss = kl_loss + opt.da_weight * da_loss
+
+        if torch.isnan(loss) or torch.isinf(loss):
             print('Skip the NaN or INF loss')
             continue
-        running_loss += kl_loss.item()
+        running_kl_loss += kl_loss.item()
+        running_da_loss += da_loss.item()
 
         optimizer.zero_grad()
-        kl_loss.backward()
+        loss.backward()
         optimizer.step()
 
-    epoch_loss = running_loss / len(train_loader)
-    writer.add_scalar('data/train_loss_epoch', epoch_loss, epoch)
+    epoch_kl_loss = running_kl_loss / len(train_src_loader)
+    epoch_da_loss = running_da_loss / len(train_src_loader)
+    writer.add_scalar('data/train_kl_loss_epoch', epoch_kl_loss, epoch)
+    writer.add_scalar('data/train_da_loss_epoch', epoch_da_loss, epoch)
 
-    print("[Train] Epoch: {}/{} Loss: {}".format(epoch + 1, opt.epochs, epoch_loss))
+    print("[Train] Epoch: {}/{} KL Loss: {} DA Loss: {}".format(epoch + 1, opt.epochs, epoch_kl_loss, epoch_da_loss))
     stop_time = timeit.default_timer()
     print("Execution time: " + str(stop_time - start_time) + "\n")
 
@@ -135,6 +183,7 @@ def train_model(epoch, train_loader, encoder, transformer, score_model, optimize
 
 def test_model(epoch, test_loader, encoder, transformer, score_model, writer, epsilon=1e-5):
     # Evaluate the highlight score for each test segment
+    encoder.eval()
     transformer.eval()
     score_model.eval()
 
@@ -204,7 +253,7 @@ def test_model(epoch, test_loader, encoder, transformer, score_model, writer, ep
     writer.add_scalar('data/test_map_epoch', map, epoch)
     print("[Test] Epoch: {}/{} mAP: {}".format(epoch + 1, opt.epochs, map))
 
-    return 
+    return
 
 ###################################
 
@@ -215,8 +264,12 @@ if __name__ == "__main__":
         transformer = transformer.Transformer(dim=4096, depth=opt.depth, heads=opt.heads, mlp_dim=opt.mlp_dim,
                                               dropout=opt.dropout_ratio)
         score_model = score_net.ScoreFCN(emb_dim=4096)
-        train_params = [{'params':transformer.parameters(), 'lr': opt.lr},
-                        {'params':score_model.parameters(), 'lr': opt.lr}]
+        if opt.da_metric in ['mmd', 'coral']:
+            train_params = [{'params':C3D_model.get_1x_lr_params(encoder), 'lr': opt.lr * 0.1},
+                            {'params':transformer.parameters(), 'lr': opt.lr},
+                            {'params':score_model.parameters(), 'lr': opt.lr}]
+        else:
+            raise ValueError('Only mmd and coral are available')
     else:
         print('We only consider to use C3D model for feature extraction')
         raise NotImplementedError
@@ -246,24 +299,30 @@ if __name__ == "__main__":
     # Define the data
     print('Start training on {} dataset...'.format(opt.dataset))
     if opt.dataset == 'YouTube_Highlights':
-        train_dataset = YouTube_Highlights_Set(dataset=opt.dataset, split='train', category=opt.src_category,
-                                               clip_len=opt.clip_len, set_size=opt.set_size)
+        train_src_dataset = YouTube_Highlights_Set(dataset=opt.dataset, split='train', category=opt.src_category,
+                                                   clip_len=opt.clip_len, set_size=opt.set_size)
+        train_tgt_dataset = YouTube_Highlights_Set(dataset=opt.dataset, split='train', category=opt.tgt_category,
+                                                   clip_len=opt.clip_len, set_size=opt.set_size)
         test_dataset = YouTube_Highlights_Set(dataset=opt.dataset, split='test', category=opt.tgt_category,
                                               clip_len=opt.clip_len, set_size=opt.set_size)
     elif opt.dataset == 'ActivityNet':
-        train_dataset = ActivityNet_Set(dataset=opt.dataset, split='train', category=opt.src_category,
-                                        clip_len=opt.clip_len, set_size=opt.set_size)
+        train_src_dataset = ActivityNet_Set(dataset=opt.dataset, split='train', category=opt.src_category,
+                                            clip_len=opt.clip_len, set_size=opt.set_size)
+        train_tgt_dataset = ActivityNet_Set(dataset=opt.dataset, split='train', category=opt.tgt_category,
+                                            clip_len=opt.clip_len, set_size=opt.set_size)
         test_dataset = ActivityNet_Set(dataset=opt.dataset, split='validation', category=opt.tgt_category,
                                        clip_len=opt.clip_len, set_size=opt.set_size)
     else:
         raise ValueError('Dataset {} is not available.'.format(opt.dataset))
 
-    train_loader = DataLoader(train_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=1)
+    train_src_loader = DataLoader(train_src_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=1)
+    train_tgt_loader = DataLoader(train_tgt_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=1)
     test_loader = DataLoader(test_dataset, batch_size=opt.batch_size, shuffle=False, num_workers=1)
 
-    # Training 
+    # Training
     for epoch in range(opt.resume_epoch, opt.epochs):
-        train_model(epoch, train_loader, encoder, transformer, score_model, optimizer, scheduler, writer)
+        train_model(epoch, train_src_loader, train_tgt_loader, encoder, transformer, score_model,
+                    optimizer, scheduler, writer)
 
     # Evaluation
     test_model(epoch, test_loader, encoder, transformer, score_model, writer)

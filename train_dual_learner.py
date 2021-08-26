@@ -18,6 +18,7 @@ from torch import nn, optim
 from torch.utils.data import DataLoader
 from sklearn.metrics import average_precision_score
 import numpy as np
+import math
 
 from dataloaders.youtube_highlights_set import YouTube_Highlights_Set
 from dataloaders.activity_net_set import ActivityNet_Set
@@ -265,9 +266,18 @@ def test_model(epoch, test_loader, encoder, transformer, fine_score_model, coars
         tmp_scores = np.exp(tmp_scores) / (np.exp(tmp_scores).sum() + epsilon)
 
         tmp_labels = np.array(video_labels[video_id], dtype=np.float64)
-        tmp_labels = np.float64(tmp_labels > 0)
+        if opt.dataset == 'YouTube_Highlights':
+            tmp_labels = np.float64(tmp_labels > 0)
 
-        ap = average_precision_score(tmp_labels, tmp_scores)
+        # Exclude the samples with invalid labels
+        try:
+            ap = average_precision_score(tmp_labels, tmp_scores)
+        except:
+            print('Skip the invalid sample')
+            continue
+        if math.isnan(ap) or math.isinf(ap):
+            print('Skip invalid test video')
+            continue
         aps.append(ap)
 
     map = np.array(aps).mean()
@@ -326,8 +336,15 @@ if __name__ == "__main__":
                                                    clip_len=opt.clip_len, set_size=opt.set_size)
         test_dataset = YouTube_Highlights_Set(dataset=opt.dataset, split='test', category=opt.tgt_category,
                                               clip_len=opt.clip_len, set_size=opt.set_size)
+    elif opt.dataset == 'ActivityNet':
+        train_src_dataset = ActivityNet_Set(dataset=opt.dataset, split='train', category=opt.src_category,
+                                            clip_len=opt.clip_len, set_size=opt.set_size)
+        train_tgt_dataset = ActivityNet_Set(dataset=opt.dataset, split='train', category=opt.tgt_category,
+                                            clip_len=opt.clip_len, set_size=opt.set_size)
+        test_dataset = ActivityNet_Set(dataset=opt.dataset, split='validation', category=opt.tgt_category,
+                                       clip_len=opt.clip_len, set_size=opt.set_size)
     else:
-        raise ValueError('Only YouTube Highlights is included in this demo project.')
+        raise ValueError('Dataset {} is not available.'.format(opt.dataset))
 
     train_src_loader = DataLoader(train_src_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=1)
     train_tgt_loader = DataLoader(train_tgt_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=1)
