@@ -11,7 +11,7 @@ We provide the codes for our proposed *SL-module*, *DL-VHD* and also some domain
 
 More details of this work can be found in our paper: [[Paper (arXiv)]](). 
 
-### Prerequisites
+## Prerequisites
 
 We develop this project with `Python3.6` and following Python packages:
 ```
@@ -21,7 +21,7 @@ einops                    0.3.0
 ```
 **P.S.** In our project, these packages can be successfully installed and work together under `CUDA/9.0` and `cuDNN/7.0.5`.
 
-### Dataset and Pre-trained Model
+## Dataset and Pre-trained Model
 
 **YouTube Highlights dataset.** You can download the dataset in [this repository](https://github.com/aliensunmin/DomainSpecificHighlight) and put it under the path you like, e.g. `~/data/YouTube_Highlights/`. 
 
@@ -41,7 +41,7 @@ python process_ActivityNet.py
 
 **Pre-trained model.** You can download the pre-trained C3D model in [this link](https://drive.google.com/file/d/19NWziHWh1LgCcHU34geoKwYezAogv9fX/view?usp=sharing) and put it under the path you like, e.g. `~/pretrained_models/`.
 
-### Category-specific Video Highlight Detection
+## Category-specific Video Highlight Detection
 
 **SL-module.** To train and finally evaluate the SL-module, simply run: 
 ```
@@ -49,7 +49,7 @@ python train_SL_module.py --gpu_id $device_id$ --src_category $cls$ \
                           --tgt_category $cls$ --use_transformer
 ```
 
-### Cross-category Video Highlight Detection
+## Cross-category Video Highlight Detection
 
 **Source-only.** To train and finally evaluate the Source-only model with SL-module, simply run:
 ```
