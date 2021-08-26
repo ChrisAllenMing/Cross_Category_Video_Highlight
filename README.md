@@ -1,9 +1,15 @@
 # Cross-category Video Highlight Detection via Set-based Learning
 
+<p align="center">
+  <img src="docs/problem_setting.png" /> 
+</p>
+
 ## Introduction
 
-This demo project is an implementation of ``Cross-category Video Highlight Detection via Set-based Learning'' in PyTorch. 
-We provide the codes for *SL-module* and *DL-VHD* on YouTube Highlights dataset. 
+This project is an implementation of ``Cross-category Video Highlight Detection via Set-based Learning'' in PyTorch, which is accepted by *ICCV 2021*. 
+We provide the codes for our proposed *SL-module*, *DL-VHD* and also some domain adaptation baselines in this repository.
+
+More details of this work can be found in our paper: [[Paper (arXiv)]](). 
 
 ### Prerequisites
 
@@ -17,18 +23,27 @@ einops                    0.3.0
 
 ### Dataset and Pre-trained Model
 
-**Dataset.** This demo project only includes the implementation on YouTube Highlights dataset, you can download the dataset in [this pervious work](https://github.com/aliensunmin/DomainSpecificHighlight) and put it under the path you like, e.g. `~/data/YouTube_Highlights/`. 
+**YouTube Highlights dataset.** You can download the dataset in [this repository](https://github.com/aliensunmin/DomainSpecificHighlight) and put it under the path you like, e.g. `~/data/YouTube_Highlights/`. 
 
-**Dataset pre-processing.** For training highlight detection models, you can convert the original videos in YouTube Highlights to video segments by following command:
+For training highlight detection models, you can convert the original videos in YouTube Highlights to video segments by following command:
 ```
 python ./dataloaders/youtube_highlights_set.py
 ```
 
-**Pre-trained model.** You can download the pre-trained C3D model in [this url](https://drive.google.com/file/d/19NWziHWh1LgCcHU34geoKwYezAogv9fX/view?usp=sharing) and put it under the path you like, e.g. `~/pretrained_models/`.
+**ActivityNet dataset.** Because of the large size of the full dataset, we suggest you to crawl videos using [this tool](https://github.com/activitynet/ActivityNet/tree/master/Crawler). We provide the names of the videos used in our work in [this file](https://github.com/ChrisAllenMing/Cross_Category_Video_Highlight/blob/main/data_process/data_info/ActivityNet_vids.txt). 
+You can put the crawled videos under the path you like, e.g. `~/data/ActivityNet/`.
+
+To fit the format of highlight detection, you can convert the raw videos and annotations by following commands:
+```
+cd ./data_process
+python process_ActivityNet.py
+```
+
+**Pre-trained model.** You can download the pre-trained C3D model in [this link](https://drive.google.com/file/d/19NWziHWh1LgCcHU34geoKwYezAogv9fX/view?usp=sharing) and put it under the path you like, e.g. `~/pretrained_models/`.
 
 ### Category-specific Video Highlight Detection
 
-**SL-module.** To train (also finally evaluate) the SL-module, simply run: 
+**SL-module.** To train and finally evaluate the SL-module, simply run: 
 ```
 python train_SL_module.py --gpu_id $device_id$ --src_category $cls$ \
                           --tgt_category $cls$ --use_transformer
@@ -36,20 +51,40 @@ python train_SL_module.py --gpu_id $device_id$ --src_category $cls$ \
 
 ### Cross-category Video Highlight Detection
 
-**Source-only.** To train (also finally evaluate) the Source-only model with SL-module, simply run:
+**Source-only.** To train and finally evaluate the Source-only model with SL-module, simply run:
 ```
 python train_SL_module.py --gpu_id $device_id$ --src_category $src_cls$ \
                           --tgt_category $tgt_cls$ --use_transformer
 ```
 
-**Target-oracle.** To train (also finally evaluate) the Target-oracle model with SL-module, simply run:
+**Target-oracle.** To train and finally evaluate the Target-oracle model with SL-module, simply run:
 ```
 python train_SL_module.py --gpu_id $device_id$ --src_category $tgt_cls$ \
                           --tgt_category $tgt_cls$ --use_transformer
 ```
 
-**DL-VHD.** To train (also finally evaluate) the DL-VHD model, simply run:
+**DA baselines.** To train and finally evaluate two domain adaptation baselines (MMD and Deep CORAL), simply run:
+```
+python train_da_baselines.py --gpu_id $device_id$ --src_category $src_cls$ \
+                             --tgt_category $tgt_cls$ --da_metric $mmd/coral$ \
+                             --use_transformer
+```
+
+**DL-VHD.** To train and finally evaluate the DL-VHD model, simply run:
 ```
 python train_dual_learner.py --gpu_id $device_id$ --src_category $src_cls$ \
                              --tgt_category $tgt_cls$ --use_transformer
+```
+
+## Citation
+
+If this work helps your research, you can kindly cite the following paper (will be updated when the ICCV paper is published).
+
+```
+@article{xu2021cross-category,
+  title={Cross-category Video Highlight Detection via Set-based Learning},
+  author={Xu, Minghao and Wang, Hang and Ni, Bingbing and Zhu, Riheng and Sun Zhenbang and Wang Changhu},
+  journal={arXiv preprint arXiv:},
+  year={2021}
+}
 ```
