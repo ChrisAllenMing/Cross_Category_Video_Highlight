@@ -19,6 +19,7 @@ from sklearn.metrics import average_precision_score
 import numpy as np
 
 from dataloaders.youtube_highlights_set import YouTube_Highlights_Set
+from dataloaders.activity_net_set import ActivityNet_Set
 from network import C3D_model
 from network import transformer
 from network import score_net
