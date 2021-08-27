@@ -9,7 +9,7 @@
 This project is an implementation of ``Cross-category Video Highlight Detection via Set-based Learning'' in PyTorch, which is accepted by *ICCV 2021*. 
 We provide the codes for our proposed *SL-module*, *DL-VHD* and also some domain adaptation baselines in this repository.
 
-More details of this work can be found in our paper: [[Paper (arXiv)]](). 
+More details of this work can be found in our paper: [[Paper (arXiv)]](https://arxiv.org/pdf/2108.11770.pdf). 
 
 ## Prerequisites
 
@@ -84,7 +84,7 @@ If this work helps your research, you can kindly cite the following paper (will 
 @article{xu2021cross-category,
   title={Cross-category Video Highlight Detection via Set-based Learning},
   author={Xu, Minghao and Wang, Hang and Ni, Bingbing and Zhu, Riheng and Sun, Zhenbang and Wang, Changhu},
-  journal={arXiv preprint arXiv:},
+  journal={arXiv preprint arXiv:2108.11770},
   year={2021}
 }
 ```
